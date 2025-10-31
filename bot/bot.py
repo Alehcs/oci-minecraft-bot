@@ -40,22 +40,19 @@ async def start_server(ctx):
     await bot.change_presence(activity=discord.Game(name="Servidor: Iniciando..."))
     
     try:
-        # Ejecuta el script start.sh COMO el usuario 'minecraft' de forma asíncrona
+        # Ejecuta el script start.sh COMO el usuario 'minecraft' de forma asíncrona con desacoplamiento
+        # Usa DEVNULL para no bloquear el bot, asumiendo que el arranque será exitoso
         command = ['sudo', '-u', 'minecraft', '/home/minecraft/server/start.sh']
         process = await asyncio.create_subprocess_exec(
             *command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL
         )
-        stdout, stderr = await process.communicate()
         
-        if process.returncode != 0:
-            error_msg = stderr.decode() if stderr else "Error desconocido"
-            await ctx.send(f'❌ **Error al iniciar el servidor:**\n`{error_msg}`')
-            await bot.change_presence(activity=discord.Game(name="Servidor: Error"))
-            return
         
-        await asyncio.sleep(30) # Dar tiempo al servidor para que arranque
+        # El servidor se queda corriendo en background
+        await asyncio.sleep(45)  # Dar tiempo suficiente al servidor para que arranque
+        
         await ctx.send(f'🚀 ¡Servidor iniciado! Ya pueden conectarse a: `{SERVER_IP}`')
         await bot.change_presence(activity=discord.Game(name=f"Servidor: ONLINE ({SERVER_IP})"))
 
