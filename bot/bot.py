@@ -4,6 +4,7 @@ import os
 import asyncio
 from dotenv import load_dotenv
 from pathlib import Path
+from datetime import datetime, timedelta
 
 # --- Configuración ---
 # Cargar .env desde la misma carpeta que bot.py
@@ -13,26 +14,61 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 if not TOKEN:
     raise ValueError("❌ CRÍTICO: DISCORD_TOKEN no está definido en bot/.env")
 
-# (Haz clic derecho en tu canal/rol en Discord -> "Copiar ID")
+# (Haz clic derecho en tu canal en Discord -> "Copiar ID")
 ALLOWED_CHANNEL_ID = 1433902638461878354  # ID del canal donde escuchará el bot
-ADMIN_ROLE_ID = 765797769750642728      # ID del rol que puede usar los comandos
 
 SERVER_IP = "159.112.131.174" # La IP de tu servidor
+
+# Auto-cierre por inactividad
+INACTIVITY_TIMEOUT = 15  # minutos
+last_activity = datetime.now()
+auto_shutdown_task = None
 
 intents = discord.Intents.default()
 intents.message_content = True # Necesario para leer "!startserver"
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+async def auto_shutdown_check():
+    """Verifica periódicamente si hay inactividad y cierra el bot"""
+    global last_activity, auto_shutdown_task
+    
+    while True:
+        await asyncio.sleep(60)  # Verificar cada minuto
+        
+        inactive_time = datetime.now() - last_activity
+        if inactive_time >= timedelta(minutes=INACTIVITY_TIMEOUT):
+            print(f"⚠️ Bot inactivo por {INACTIVITY_TIMEOUT} minutos. Cerrando...")
+            await bot.close()
+            break
+
+def reset_inactivity_timer():
+    """Reinicia el temporizador de inactividad"""
+    global last_activity
+    last_activity = datetime.now()
+
+@bot.event
+async def on_message(message):
+    # Solo contar actividad en el canal permitido
+    if message.channel.id == ALLOWED_CHANNEL_ID:
+        reset_inactivity_timer()  # Reiniciar temporizador cuando hay actividad
+    await bot.process_commands(message)
+
 @bot.event
 async def on_ready():
+    global auto_shutdown_task
     print(f'Bot conectado como {bot.user}')
     await bot.change_presence(activity=discord.Game(name="Servidor: Offline"))
+    
+    # Iniciar la tarea de auto-cierre
+    reset_inactivity_timer()
+    auto_shutdown_task = asyncio.create_task(auto_shutdown_check())
 
 # --- Comando Start ----
 @bot.command(name='startserver')
-@commands.has_role(ADMIN_ROLE_ID)
 async def start_server(ctx):
+    reset_inactivity_timer()  # Reiniciar temporizador de inactividad
+    
     if ctx.channel.id != ALLOWED_CHANNEL_ID: # Solo en el canal permitido
         return
 
@@ -62,8 +98,9 @@ async def start_server(ctx):
 
 # --- Comando Stop ----
 @bot.command(name='stopserver')
-@commands.has_role(ADMIN_ROLE_ID)
 async def stop_server(ctx):
+    reset_inactivity_timer()  # Reiniciar temporizador de inactividad
+    
     if ctx.channel.id != ALLOWED_CHANNEL_ID:
         return
 
@@ -97,9 +134,7 @@ async def stop_server(ctx):
 # Manejo de errores
 @bot.event
 async def on_command_error(ctx, error):
-    if isinstance(error, commands.MissingRole):
-        await ctx.send('⛔ No tienes permiso para usar este comando.')
-    elif isinstance(error, commands.CommandNotFound):
+    if isinstance(error, commands.CommandNotFound):
         pass # Ignorar comandos no encontrados
     else:
         print(f"Error: {error}")
