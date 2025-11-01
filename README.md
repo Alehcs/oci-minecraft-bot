@@ -67,7 +67,7 @@ Esta sección es un resumen de los pasos cruciales para la configuración.
     ```bash
     sudo -iu minecraft crontab -e
     ```
-    Añadir la línea de programación (ejemplo para 4:00 AM diario):
+    Programacion en Cron (ejemplo para 4:00 AM diario):
     ```cron
     0 4 * * * /home/minecraft/backups/backup.sh > /home/minecraft/backups/backup.log 2>&1
     ```
