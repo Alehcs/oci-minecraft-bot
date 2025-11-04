@@ -4,7 +4,6 @@ import os
 import asyncio
 from dotenv import load_dotenv
 from pathlib import Path
-from datetime import datetime, timedelta
 
 # --- Configuración ---
 # Cargar .env desde la misma carpeta que bot.py
@@ -19,56 +18,19 @@ ALLOWED_CHANNEL_ID = 1433902638461878354  # ID del canal donde escuchará el bot
 
 SERVER_IP = "159.112.131.174" # La IP de tu servidor
 
-# Auto-cierre por inactividad
-INACTIVITY_TIMEOUT = 15  # minutos
-last_activity = datetime.now()
-auto_shutdown_task = None
-
 intents = discord.Intents.default()
 intents.message_content = True # Necesario para leer "!startserver"
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-async def auto_shutdown_check():
-    """Verifica periódicamente si hay inactividad y cierra el bot"""
-    global last_activity, auto_shutdown_task
-    
-    while True:
-        await asyncio.sleep(60)  # Verificar cada minuto
-        
-        inactive_time = datetime.now() - last_activity
-        if inactive_time >= timedelta(minutes=INACTIVITY_TIMEOUT):
-            print(f"⚠️ Bot inactivo por {INACTIVITY_TIMEOUT} minutos. Cerrando...")
-            await bot.close()
-            break
-
-def reset_inactivity_timer():
-    """Reinicia el temporizador de inactividad"""
-    global last_activity
-    last_activity = datetime.now()
-
-@bot.event
-async def on_message(message):
-    # Solo contar actividad en el canal permitido
-    if message.channel.id == ALLOWED_CHANNEL_ID:
-        reset_inactivity_timer()  # Reiniciar temporizador cuando hay actividad
-    await bot.process_commands(message)
-
 @bot.event
 async def on_ready():
-    global auto_shutdown_task
     print(f'Bot conectado como {bot.user}')
     await bot.change_presence(activity=discord.Game(name="Servidor: Offline"))
-    
-    # Iniciar la tarea de auto-cierre
-    reset_inactivity_timer()
-    auto_shutdown_task = asyncio.create_task(auto_shutdown_check())
 
 # --- Comando Start ----
 @bot.command(name='startserver')
 async def start_server(ctx):
-    reset_inactivity_timer()  # Reiniciar temporizador de inactividad
-    
     if ctx.channel.id != ALLOWED_CHANNEL_ID: # Solo en el canal permitido
         return
 
@@ -99,8 +61,6 @@ async def start_server(ctx):
 # --- Comando Stop ----
 @bot.command(name='stopserver')
 async def stop_server(ctx):
-    reset_inactivity_timer()  # Reiniciar temporizador de inactividad
-    
     if ctx.channel.id != ALLOWED_CHANNEL_ID:
         return
 
@@ -126,6 +86,39 @@ async def stop_server(ctx):
         output = stdout.decode() if stdout else "Servidor detenido correctamente"
         await ctx.send(f'✅ Servidor detenido de forma segura.\n`{output}`')
         await bot.change_presence(activity=discord.Game(name="Servidor: Offline"))
+
+    except Exception as e:
+        await ctx.send(f'❌ **Error inesperado:**\n`{e}`')
+        await bot.change_presence(activity=discord.Game(name="Servidor: Error"))
+
+# --- Comando Restart ----
+@bot.command(name='restartserver')
+async def restart_server(ctx):
+    if ctx.channel.id != ALLOWED_CHANNEL_ID:
+        return
+
+    await ctx.send('🔄 Recibido. Reiniciando el servidor de Minecraft...')
+    await bot.change_presence(activity=discord.Game(name="Servidor: Reiniciando..."))
+    
+    try:
+        # Ejecuta el script restart.sh COMO el usuario 'minecraft' de forma asíncrona
+        command = ['sudo', '-u', 'minecraft', '/home/minecraft/server/restart.sh']
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode != 0:
+            error_msg = stderr.decode() if stderr else "Error desconocido"
+            await ctx.send(f'❌ **Error al reiniciar el servidor:**\n`{error_msg}`')
+            await bot.change_presence(activity=discord.Game(name="Servidor: Error"))
+            return
+        
+        await asyncio.sleep(50)  # Dar tiempo para que el servidor reinicie
+        await ctx.send(f'🔄 ¡Servidor reiniciado! Ya pueden conectarse a: `{SERVER_IP}`')
+        await bot.change_presence(activity=discord.Game(name=f"Servidor: ONLINE ({SERVER_IP})"))
 
     except Exception as e:
         await ctx.send(f'❌ **Error inesperado:**\n`{e}`')
